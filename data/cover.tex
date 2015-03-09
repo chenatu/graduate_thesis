@@ -62,7 +62,9 @@
 % 定义中英文摘要和关键字
 \begin{cabstract}
    近年来，互联网基础设施及应用服务快速发展，互联网“基础架构化”的趋势明显。在私有的分布式系统内部，服务多以服务接口的形式进行集成。在全局互联网中，越来越多的网络资源服务如Amazon云存储，微信公共账号等以SOAP（Simple Object Access protocol）或者REST（Representational State Transfer）接口的形式对外提供服务。而近些年云计算的发展与推广，使基于云服务尤其软件即服务（Software as a Service，SAAS）的接口服务得到大规模普及。
+
    SOAP和REST为当前最流行的两种Web Service服务形式。REST需要基于下层的HTTP协议。SOAP虽然对下层协议没有特定的限制，但是HTTP协议是最普遍的实现方式。HTTP协议也成为了事实上的网络瘦腰（thin waist）。而从HTTP协议开始，自上而下需要经过多层协议栈，而各层协议栈为了通用性没有对大规模的服务网络进行优化。HTTP协议以目标主机名为基础对数据包进行命名。近些年来，信息中心网络作为一种新的网络架构设计范式被提出来。其核心是以内容命名网络包来取代以地址命名的网络包。以其中的命名服务网络为例，以命名数据包替代IP网络包作为新的网络瘦腰。将服务网络与命名数据网络的性质有机结合起来，为服务网络从底层进行优化提供了新的研究方向。本文中，作者通过命名机制，提出一种重构面向服务的网络协议栈设计，并对该设计的协议性能，安全性等进行实验研究，最后提出一种将该服务网络应用于局部分布式系统的方案。作者的主要工作是：
+
   \begin{itemize}
     \item 开发一种基于命名服务网络的存储软件，并以此软件为原型提出基于命名机制的服务网络设计原则；
     \item 提出一种基于命名机制的服务网络协议设计即命名服务网络；
@@ -74,23 +76,17 @@
 \ckeywords{Web Service, 信息中心网络, 命名数据网络}
 
 \begin{eabstract} 
-   An abstract of a dissertation is a summary and extraction of research work
-   and contributions. Included in an abstract should be description of research
-   topic and research objective, brief introduction to methodology and research
-   process, and summarization of conclusion and contributions of the
-   research. An abstract should be characterized by independence and clarity and
-   carry identical information with the dissertation. It should be such that the
-   general idea and major contributions of the dissertation are conveyed without
-   reading the dissertation. 
+   Internet infrastructure and overlay services have been widely deployed in recent years. The trend of infrastructuralization of Internet has been increasingly apparent. In local system, distributed services are commonly integrated with remote control interfaces. In Internet, more and more services or functions, for example Amazon EC2, Wechat public account, are provided in the form of SOAP or REST apis. As cloud services are drawing more attentions, cloud services, especially based on SAAS, are becoming more popular.
 
-   An abstract should be concise and to the point. It is a misunderstanding to
-   make an abstract an outline of the dissertation and words ``the first
-   chapter'', ``the second chapter'' and the like should be avoided in the
-   abstract.
+   SOAP and REST are two most widely used Web Service protocol. REST works upon HTTP. SOAP are not binded with specific protocol, while HTTP is the most common underlying protocol. HTTP is the de facto network thin waist. Web services are over multiple layers of network stacks, which are not optimized for service efficiency. The web service network packet is actually in the form of HTTP packet. In recent years, Informaction Centric Network (ICN) is proposed as new network architecture pattern. Named Data Network (NDN), for example, replaces IP packet with named data packet as new network thin waist. Combining web service with ICN shows new perspective of optimization. In this paper, a new design of service network based on naming mechanism is proposed. Performance, security and etc. are evaluated. A framework of distributed system based on named service networking is also discussed. The main work of this dissertation is as follows:
 
-   Key words are terms used in a dissertation for indexing, reflecting core
-   information of the dissertation. An abstract may contain a maximum of 5 key
-   words, with semi-colons used in between to separate one another.
+   \begin{itemize}
+    \item A data repository of NDN is devloped. Principles of Named Service Network are proposed based on this prototype.
+    \item Details of Named Service Network (NSN) are demonstrated.
+    \item Prototyple of NSN is developed. Evaluation of NSN is conducted.
+    \item An implementation of NSN on distributed system is provided.
+  \end{itemize}
+   
 \end{eabstract}
 
-\ekeywords{\TeX, \LaTeX, CJK, template, thesis}
+\ekeywords{Web Service, Information Centric Networking, Named Data Networking}

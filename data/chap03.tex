@@ -1,0 +1,201 @@
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: t
+%%% End: 
+
+\chapter{基于命名数据网络的存储服务}
+\section{命名数据网络存储原型介绍}
+在NDN中，缓存结构（CS）直接集成在NDN的架构之中，但CS架构还不能完全满足复杂的内容操作要求：一方面CS只是数据的缓存，数据会被替换掉；另一方面对于数据的插入，删除，访问控制等问题，CS完全没有主动操作接口。NDN网络架构取代当前的IP网络架构的一个主要动机就是，当前网络最主要的流量是数据分发，NDN以数据为中心的拉模式（pull）也非常适合数据分发类的应用。
+
+CS可以将数据直接存储在网络层，而相应数据存储应用也可以将数据存储在网络直接可操作的层面。NDN架构支持网络层次存储的的主要原因为：1.NDN直接以数据本身的名字进行命名。在IP网络中，数据以源地址和目的地址进行命名，数据无法被其他主机重用。虽然有组播的方式，但是对于组播组之外主机还是无法进行重用。2.数据隐私：每一个命名数据都带着签名，数据的非拥有者无法对数据进行篡改。同时数据发布者可以对数据直接进行加密，数据的私密性也可以得到保证。
+
+在NDN中，数据仓库（repository，简称repo）为持久数据存储模型。在NDN中，NDN Repo的概念为被单一组织管理的运行在NDN网络上的数据存储应用。NDN Repo直接运行在NDN网络之上，而不是去修改NDN的底层协议。Repo最主要的作用就是为数据提供持久存储，处理NDN网络转发的数据请求（inerest）。Repo的存储单位为数据对象（data object），数据的管理单位为\textit{data object}的名字前缀。NDN Repo需要遵守NDN Repo协议，该协议定义了操作Repo的基本语义与流程。协议内容基本包括数据的插入，删除以及查询。Repo协议中为数据的访问控制，安全信任提供了框架，但是没有具体规定访问政策与信任模型。同时NDN Repo实现了应用层网络封装的概念。\cite{clark1990architectural}
+
+同NDN直接的数据分发功能相比，NDN Repo还需要支持对于应用的操作功能，需要规范相应的远程操作协议，同当今互联网Web服务类似，需要控制指定名字的服务提供者提供标准的接口与流程协议文档。需要在NDN数据基础上进一步地进行服务抽象。
+
+在CCNx\footnote{CCNx: http://www.ccnx.org/what-is-ccn/}项目中，有类似的CCNr\footnote{Ccnr: https://www.ccnx.org/releases/latest/doc/technical/RepoProtocol.html}项目。而CCN项目与NDN项目都源自与文献\cite{jacobson2009networking}的最初架构设计。虽然CCNr同样提供数据的存储、插入等功能。但是CCNr不支持远程插入数据，不支持删除，没有任何访问控制策略。
+
+\section{命名数据网络存储协议原则}
+NDN Repo需要支持数据的远程的插入和删除功能。为了实现这样的功能，需要Repo服务请求者发送“命令”到Repo来实现相应的功能。在这个过程中，Repo需要完成起码三点工作：“命令”可以被转发到指定的Repo，指定的Repo需要有可以被标示的身份以及repo能够验证“命令”发送者的身份以及权限。
+
+NDN Repo协议是一组操作与控制指定Repo的通信协议。在数据传输与Repo控制过程中所涉及到流量控制，访问控制，信任模型等需要NDN Repo在遵守该协议之外去具体定义。在设计NDN Repo协议之前需要解决如下的问题：
+\begin{enumerate}
+\item \textbf{Repo的存储单位是什么：}NDN Repo的存储单位为数据对象（data object)。一个数据对象不仅仅局限于一个NDN网络数据包，而是被NDN网络上层应用所定义。一个数据对象遵循NDN网络的命名规范，并可以被分段成多个NDN网络包。虽然数据请求者还是可以请求具体的数据段，但是在插入和删除等命令中，数据还是以对象为单位进行操作。
+\item \textbf{Repo提供什么功能：}对于一个存储系统来说最基本的功能是\textit{CRUD}。当前Repo提供数据的获取，插入与删除功能。数据插入分为两种，一种是插入指定的数据对象，另一种是使Repo不停地请求指定前缀的数据。
+\item \textbf{如何识别指定的Repo：}Repo通过NDN名字前缀来制定，作为interest中名字的前缀来进行转发。
+\item \textbf{如何设计Repo命令与响应：}NDN中基本的通信流程为数据请求者发送interest，NDN网络返回命名数据包。因此Repo服务请求信息有两种选择，即封装在interest或者命名数据包中。如果封装在数据包中，则需要服务请求者首先发送一个吸引请求（soliciting interest）使repo能够根据soliciting interest封装的信息去发送服务文档请求interest。另一种模式是将整个服务请求文档封装在interest中，直接发送到指定的Repo。在前一种选择中，soliciting interest还是需要封装一定信息，在通信过程中也造成一定的浪费。本协议设计采取后一种方案。
+
+命令响应为服务请求interest的数据返回包，响应结果文档封装在该数据包的内容中。
+\item \textbf{如何制定Repo的安全设计：}在NDN原始架构中，对于数据包的安全性已经得到很大支持。但没有太多对interest安全性的设计支持。但是对于数据的安全性设计可以应用在interest之中，即在interest中加入签名，公钥等信息。Repo可以对interest进行验证，同时可以利用interest中的公钥信息来进行访问控制。
+\item \textbf{如何设计Repo服务流程：}为了控制Repo的服务流程，流入数据插入的流程，Repo端的状态需要对服务请求者可见。而对于NDN基础的通信流程，一个interest只能对应的返回一个数据包，只通过单一的服务请求interest服务了解Repo服务状态。在NDN Repo协议设计中，每一个服务相应的有服务状态检查设计。
+\end{enumerate}
+\subsection{数据获取}
+Repo的数据获取采用NDN一般的数据获取方式，即通过返回interest所对应的数据包。在具体的Repo实现中，可以增加数据前缀以及Interest发送者身份的访问控制
+\subsection{数据插入}
+Repo插入过程起始于请求者发送数据插入命令。与IP网络中推的模式不同，数据源无法直接将数据发送给Repo，需要Repo根据命令interest所封装的参数来发送数据请求interest。可以看到，在本过程中，请求者无法控制Repo从具体哪个主机取得数据，但是数据请求者可以在interest中增加限制条件（seletcor\footnote{Selector：http://named-data.net/doc/ndn-tlv/interest.html\#selectors}）来对数据发布者等进行限制。
+
+NDN Repo提供三种基本的插入协议：
+\begin{itemize}
+\item \textbf{单独插入：}通常用来插入比较小的数据对象，数据通常可以封装在一个最大传输单元（MTU）中。
+\item \textbf{选择子插入：}在普通的数据请求interest中，选择子（selector）是用来增加除了数据名字外的限制条件的，比如限制名字的长度等。选择子请求就是要repo在请求数据的过程中加入指定的selector。
+\item \textbf{分段插入：}分段插入命令是用来插入比较大的数据对象，即不能完整的封装一个MTU，需要进行分段。Repo通过发送多个interest，interest名字的尾部附加递增的段序号。interest发送的方式由应用自己来定义，可以采用线性方式，也可以采用流水线方式。由于获取数据过程中需要发送大量interest，这个过程中可能会产生网络拥塞。在Repo应用的开发过程中，用户需要自己定义流量控制与拥塞避免的方式。
+
+\end{itemize}
+
+Repo协议同样支持插入状态查询命令。当Repo接收到查询状态命令时，会返回一个状态码来表示执行状态。当该插入过程为分段插入时，Repo会返回当前的插入进度。
+
+在分段插入的过程中，插入命令需要指定数据对象的起始段ID与结束段ID。当插入命令中没有指定结束ID的时候，Repo会一直发送ID号递增的interest。返回的数据中可以附带结束ID字段FinalBlockId\footnote{FinalBlockId：http://named-data.net/doc/ndn-tlv/data.html\#finalblockid}。如果Repo始终无法确定结束端ID到一定时常后，会触发无结束超时（noEndTimeout），此时Repo会停止发送interest。但是，某些情况下，用户想进行实时的数据插入，即刚开始无法确定数据对象的大小，所以需要一种避免noEndTimeout的机制。在Repo协议设计中，可以定期发送插入状态检查命令来noEndTimeout的计时器重新置0，来增加插入的时间。
+
+Repo协议还包括丢包重传机制。当Interest在一定时间内未被响应的时候，repo会重新发送interest。当interest多次重传未被满足时，Repo会停止插入过程。
+\subsection{数据删除}
+当Repo的存储容量持续膨胀时，或某些数据已经过期、错误时，Repo需要支持删除命令。整个删除过程为，请求者发送删除命令，Repo解析命令并删除相应数据，最后发回给请求者。Repo删除命令分为如下三种。
+
+\begin{itemize}
+\item \textbf{单独删除：}单独删除会删除以改名字为前缀的\textbf{所有}数据。
+\item \textbf{选择子删除：}要删除的数据对象的选择条件为数据的名字前缀外加选择子，删除所有满足条件的数据对象。与普通意义上的selector不同，普通interest中selector是用来选择满足限制条件的某一个interest。但是在删除协议中，选择子用来选择所有满足条件的数据对象。
+\item \textbf{分段删除：}分段删除可以指定所删除数据对象的段范围，即起始段ID与结束段ID之间的数据包
+\end{itemize}
+
+综上所述，删除协议是在一定的条件下删除尽可能多的数据，在单独删除中，删除命令会删除指定前缀下的所有数据，这样可以减小删除数据所需要发送的interest的数量。如果要删除某一个数据对象则需要指定某个数据对象的全名并利用选择子指定该对象的数据长度。
+
+在删除过程中依然有删除状态检查命令。由于在删除的过程中，是先发送命令，等数据删除之后才能接收到结果返回，这个过程有可能比较长，而删除请求者一般会分配资源去等待返回结果。通过周期性的发送删除命令可以了解删除进度，请求者可以设定一定的超时时间来中断删除过程并释放资源。
+
+\subsection{前缀插入}
+前缀插入是一种特殊的插入方式，该方式是让Repo在一定时间内持续发送同样名字前缀的数据请求。这种方式不仅可以插入已经存在的数据对象，更加适合实时插入新生成的数据。例如在视频通话场景中，需要数据实时地生成。与普通插入相比，普通插入是一个即时的过程，而前缀插入是一个持续的过程。
+
+前缀插入命令需要指定需要插入的数据前缀，选择子，插入过程持续时间，以及无数据返回的超时时间等。为了保证返回的数据不重复，每当数据返回时，Repo需要更新interest的排除选择子（Exclude Selector\footnote{http://named-data.net/doc/ndn-tlv/interest.html\#exclude}）。
+
+\section{命名数据网络存储服务协议细节}
+\section{命名数据网络存储服务开发及实验评估}
+基于NDN Repo协议，作者开发了repo-ng（NDN repo of next generation）作为协议的原型实现。repo-ng的设计原则是希望能做到跨平台，降低对系统的特殊依赖，并且尽量轻量级。repo-ng采用ndn-cxx作为NDN协议底层开发库，利用sqlite3\footnote{SQLite3：https://sqlite.org/about.html}数据库作为数据对象底层存储。
+
+\subsection{存储设计}
+Repo后台存储包括索引和存储两个模块。索引用来存储数据名字的有序数据结构，存储模块用来存储完整的数据包及数据包其他信息。在repo-ng实现中，后台存储采用sqlite3数据库。选择sqlite3数据库是因为sqlite3的快平台性，基于文件的存储，软件依赖性小，非服务器，零配置的轻量级数据库。
+
+repo-ng索引用来做内存中数据包的快速查找。Index的数据结构为(Id, Name, KeyLocatorHash)，其中KeyLocator用来标记数据发布者的身份信息。KeyLocatorHash为KeyLocator的哈希值。在repo-ng的实现中，采用跳表的数据结构作为索引。虽然跳表，Btree等数据结构都有O(n)的插入与查找平均复杂度，但是跳表实现更加简单并且复杂度常系数更低。\cite{pugh1990skip}
+
+Repo的数据查找过程为根据Interest的name和selector在索引中查找数据的名字以及id号，之后根据id号在数据中查找完整的数据包。
+
+\subsection{信任模型与访问控制}
+\begin{itemize}
+\item \textbf{信任模型：}NDN Repo信任模型的信任模型是指一种判断可否信任interest或者数据包是否可以被信任的机制，通常是判断NDN网络包的发布者可否被信任。在NDN中，网络包的信任等价于网络包所携带的证书可否被信任。在repo-ng实现过程中，采用ndn-cxx库中的validator-config模块。\footnote{validconf: http://redmine.named-data.net/projects/ndn-cxx/wiki/}。repo-ng不对信任模型做具体的限定，但是还是需要利用validconf格式配置文件构建自己的信任模型。
+
+\item \textbf{访问控制：}访问控制是指某个实体是否有一定权限去执行某个命令。与信任模型不同的是，信任模型是来决定你是不是真的是你，访问控制是来确定你有没有权限去干这件事。在repo-ng实现中，repo-ng采用访问控制列表（access control list，ACL）的形式控制权限。ACL的形式如表\ref{tab:ACL}所示。其中repo-prefix为表示为repo的身份或所在的身份组，data-prefix为所控制的数据前缀，write-access和delete-acess定义改组合下的插入与删除权限。ACL配置文件的格式类似于validconf的格式。
+\end{itemize}
+
+\begin{table}[!htbp]
+\centering
+\caption{Access Control List}
+\label{tab:ACL}
+\begin{tabular}{ | c | c | c | c | c | c | }
+    \hline
+    repo-prefix & relationship & data-prefix & relationship & write-access & delete access \\ \hline
+    /repo/example/1 & Is-Prefix-Of & /data/example/1 & Equal & 1 & 0 \\ \hline
+    /repo/example/1 & Equal & /data/example/2 & Is-Prefix-Of & 0 & 1 \\ \hline
+    /repo/example/2 & Is-Prefix-Of & /data/example/3 & Is-Prefix-Of & 1 & 1 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{传输控制}
+在分段插入的过程中，repo在接收到命令后会发送指定分段数量的interest来获取需要插入的数据。在repo协议中没有规定这些interest的发送方式。如果突然大量发送interest的话，会造成网络拥塞。在repo-ng中，采用了基于信用的拥塞避免机制。最开始有一个初始信用值，每当repo发送一个interest，信用值数减1；当repo接收到一个数据返回是，信用值加1。当信用值小于等于零时，repo不再发送interest。重复的interest不会减少信用数值。
+
+\subsection{repo-ng实验评估}
+关于repo-ng的实验评估分为两个部分：本地repo操作以及网络repo操作。比较指标为数据的获取，插入与删除速度，并与CCNx项目中的ccnr进行了比较。
+
+实验硬件环境：HP Z220工作站，3.4GHz Intel Core i7 8核处理器，16G内存，7200转2T硬盘，1000M以太网卡。联想笔记本，1.74GHz Intel Core i3双核处理器，2GB内存，500GB 7200转硬盘，1000M以太网卡。
+
+实验软件环境：repo-ng采用ndn-cxx的NDN C++实验性的底层库。NDN协议转发软件为NFD\footnote{NFD：http://redmine.named-data.net/projects/nfd}。Ccnr采用ccnd转发软件。操作系统平台为Ubuntu13.10。
+
+\subsubsection{本地repo实验测试}
+repo-ng和ccnr都支持数据读取与插入，但ccnr不支持数据的删除功能。在本实验中，实验在一台HP Z220工作站上运行。数据包直接在内存中上层以避免硬盘I/O阻塞。interest访问控制被关闭。实验场景如下：
+
+\begin{enumerate}[a]
+\item $10^3$, $10^4$, $10^5$, $10^6$ 个1200B数据包被插入repo-ng。interest验证关闭。
+\item 在interest验证关闭与开启的情况下插入repo-ng$10^3$ 1200B的数据包.
+\item 从repo-ng中读取$10^3$, $10^4$, $10^5$, $10^6$的数据包。
+\item 从repo-ng中删除$10^3$, $10^4$, $10^5$, $10^6$ 1200B的数据包。interest验证关闭。 
+\item 重启repo-ng后 从$10^3$, $10^4$, $10^5$, $10^6$的数量的数据包重建索引的时间。
+\item $10^3$, $10^4$, $10^5$, $10^6$ 个1200B数据包被插入ccnr。
+\item 从ccnr中读取$10^3$, $10^4$, $10^5$, $10^6$的数据包。
+\end{enumerate}
+
+Table 4 shows the results of repo-ng speed from case a to case e. The unit of result is MBps. ``put -s'' and ``put-s-v'' mean insert commands into a clean repo-ng with and without validation。
+
+表\ref{tab:repo-ng-local}为case a到case e的repo-ng的性能测试。数据单位是MBps，其中“put-s”和“put-s-v”分别指开启和关闭interest验证情况下repo-ng的性能测试情况。表\ref{tab:ccnr-local}为case f与case g的ccnr本地性能测试。
+
+\begin{table}[!htbp]
+\centering
+\caption{本地repo-ng实验测试}
+\label{tab:repo-ng-local}
+\begin{tabular}{ | c | c | c | c | c | c | c | }
+    \hline
+           & put & get & remove & rebuild & put-s & put-s-v \\ \hline
+    $10^3$ & 0.692 & 16.881 & 15.584 & 120 & 0.041 & 0.038  \\ \hline
+    $10^4$ & 0.715 & 16.585 & 25.974 & 153.846 & & \\ \hline
+    $10^5$ & 0.719 & 16.634 & 29.843 & 158.521 & & \\ \hline
+    $10^6$ & 0.713 & 12.918 & 26.266 & 95.610 & &\\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}
+\centering
+\caption{本地ccnr实验测试}
+\label{tab:ccnr-local}
+\begin{tabular}{ | c | c | c | }
+    \hline
+           & put & get \\ \hline
+    $10^3$ & 1.336 & 0.869 \\ \hline
+    $10^4$ & 8.778 & 4.180 \\ \hline
+    $10^5$ & 24.995 & 13.258 \\ \hline
+    $10^6$ & 28.323 & 18.266 \\ \hline
+\end{tabular}
+\end{table}
+
+表\ref{tab:repo-ng-local}和表\ref{tab:ccnr-local}做了repo-ng和ccnr的比较测试。ccnr的数据插入速度要远快于repo-ng。主要原因为底层存储结构。ccnr采用类似于流式文件系统，即在文件后面追加新的数据内容；repo-ng则采用数据库，里面的数据组织要远复杂于前面的流式存储。repo-ng和ccnr的数据获取速度几乎一致，可以看出当数据量上涨时，数据吞吐速度有一些下降，其中原因是随着数据量的增长，查询索引的时间也会变长，同时数据库查找延时也会变长。
+
+表\ref{tab:repo-ng-local}也显示了repo-ng处理多个命令的速度。repo-ng处理开启与关闭验证1000个插入命令的时间分别为 29.468s和31.619s。数据插入到数据库的时间可以忽略不计。repo-ng处理一个命令大约需要30ms。在本案例中，repo-ng利用本地的证书去验证插入命令，而两种情况下命令处理时间差大约1ms，可以看到验证算法不会严重影响命令处理的时间。然而如果需要请求网络上的验证证书，则验证过程主要会花费在证书数据的传输过程中。
+
+\subsubsection{网络repo实验测试}
+硬件环境为HP Z220与联想笔记本进行网络直连。其中联想笔记本作为客户端，HP Z220。表\ref{tab:repo-ng-network}为本地repo实验测试case a到case d中的实验结果。由于网络延迟的原因，各项性能指标都有一定跌落，其中数据获取的跌落程度比较大。通过分析实验过程中的瓶颈，我们发现客户端的CPU使用率达到了70%。
+
+Repo-ng目前只是一个单线程的数据存储服务，当有多个客户端请求数据时，处理效率会比较低。对于数据获取过程，repo-ng只是处理一下interest请求，影响不会很大。而多余数据插入和删除过程，单个命令服务过程会用时比较久，这样会阻塞整个repo-ng的服务过程。因此未来repo-ng主要的开发方向为多线程异步处理。
+
+\begin{table}
+\centering
+\caption{网络repo-ng实验测试}
+\label{tab:repo-ng-network}
+\begin{tabular}{ | c | c | c | c | c | c | }
+    \hline
+           & put & get & remove & put-s & put-s-v \\ \hline
+    $10^3$ & 0.396 & 2.230 & 8.053 & 0.033 & 0.032  \\ \hline
+    $10^4$ & 0.423 & 3.490 & 21.898 & & \\ \hline
+    $10^5$ & 0.0.424 & 3.476 & 24.964 & & \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{流量控制}
+repo-ng采用基于信用的流控以及重传机制。本实验中，通过控制不同的链路丢包率有重传和没有重传机制下的数据插入成功率。实验中，重传次数为三次，重传在应用层中实现，底层的NDN网络没有任何重传机制。如图\ref{fig:drop-rate}所示，有重传的插入成功率要明显好于没有重传的情况。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{drop-rate}
+  \caption{不同丢包率情况下的数据插入成功率}
+  \label{fig:drop-rate}
+\end{figure}
+
+\section{存储服务设计原则总结}
+NDN Repo对外提供了远程的数据操作服务，并在Repo操作协议中定义了交换的文档格式，信息语义以及交互流程，具备了提供service的基本特征。根据web service的WSMF模型的八要素：Repo的协议已经具备如下要素：
+
+\begin{itemize}
+\item 文档类型（Document Types）：确定协议间到底采用的是插入协议还是删除协议。
+\item 语义（semantics）：采用与NDN协议中相似的数据类型，例如：NAME-COMPONENT-TYPE。
+\item 相关传输协议：采用NDN作为底层的传输协议。
+\item 信息交换序列：完整的数据对象被底层NDN网络分段时，在分段数据包名字后加入了段序号。
+\item 流程：无论是插入还是删除的协议都定义了相对完备的流程，在流程中出现的各种状态，都定义了repo的相应操作。
+\item 安全：下层的NDN网络定义了针对数据包的基本安全，而在repo协议中对命令请求也进行了证书签名。
+\item 句法：采用了TLV格式，同样具备动态伸缩的文档格式。此外由于在TLV格式中包含了数据的长度信息，文档编码解码的效率更高。
+\item 服务配置：在repo-ng的实现过程中，repo-ng的配置文件采用了json格式，同时语义比较接近validconf。
+\end{itemize}
+
+由上可得，以NDN Repo协议为基础的NDN网络上的服务具备WSMF模型所要求的Web服务的基本要素，可以以repo协议为原型，提出一套基于命名数据网络的服务架构。而相比于Web Service的经典三要素：SOAP，UDDI以及WSDL，目前在基础设计上还是缺位的。具体体现在，虽然在Repo协议中定义了一些命令的消息格式，但是没有一套通用的命令格式。在NDN Packet Specification中，对TLV结构的格式有一套基本定义，但是还没有对命令及其参数等信息的文档描述。最后，在Web Service中UDDI为Web Service功能集成的典型目录系统，虽然NDN协议未必需要一个集成的服务目录，但是需要一套Service Descovery。进一步的为了服务流程自动化，NDN服务协议也需要一套类比于BPEL的服务集成方式。

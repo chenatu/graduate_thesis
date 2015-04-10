@@ -9,6 +9,7 @@
 Web服务从广义上指基于网络的主机与主机之间互操作的软件系统。Web服务的主要特点在于提供轻量级的Web调用接口提供自足的（self-contained）松耦合的服务。狭义Web服务特指Web Service类似于W3C制定的基于SOAP协议的服务架构。该架构最基本的元素如引言所述的SOAP+WSDL+UDDI。关于Web Service架构的研究与应用开发在21世纪伊始比较热，而最近大与服务提供商更加倾向于使用形式上更加简单的REST接口。
 \subsection{基于SOAP协议的Web Service}
 \subsubsection{服务架构}
+\label{WSMF-arc}
 与工业界注重W3C及企业联盟注重标准制定与协议规范不同，学术界更加注重以通信协议为基础如何解决在资源动态变化的基础上解决日益复杂的应用需求。研究的问题主要包括Web数据集成、服务组合、访问控制、事件机制以及语义网（semantic web）相关研究。一个最基本的Web Service架构如图\ref{fig:web-service-arc-2}所示。
 
 \begin{figure}[H]
@@ -142,10 +143,13 @@ NDN协议处理架构主要是基于三个表即转发表（Forwarding Informati
 一个节点处理interest请求过程为，首先查找CS看是否有对应的数据包，如果有直接返回，如果没有则查找FIB表，看有没有转发的合适条目，如果存在则按照FIB规则转发，同时interest被存储在PIT中。当对应的请求包回到该节点时，一方面根据CS缓存策略对该数据包进行缓存，另一方面根据PIT表存储的interest信息返回该数据，并删除PIT表中的该条目。
 
 \subsection{基于信息中心网络的服务网络相关研究}
+\label{SCN-intro}
 ICN本质上是把传统网络中的\textit{where}模型转化为\textit{what}模型，网络直接处理的是应用数据的抽象。而一些研究在数据之上进一步地进行抽象，认为网络的本质是承载与连接服务。
 
 文献\cite{nordstrom2012serval}提出一种服务中心网络协议栈（Serval）。通过ServiceID来标记应用网络包，通过FlowID用来标记当连接建立后的网络包。Serval协议栈中还增加了Service Table和Flow Table用来记录Service和Flow的网络状态，在Host端可以可以针对网络服务情况进行状态保持和只能决策。
 
 文献\cite{braun2011service,braun2013service}中提出一种服务中心网络（Service-Centric Networking，SCN）架构以及一种基于NDN的服务中心网络实现。在沙漏架构中将NDN的命名数据包替换成服务对象。SCN修改Interest的结构使其能够封装服务请求参数。但整体来说SCN就是对NDN表述的重新抽象以及对流程的简单修改。
+
+文献\cite{tschudin2014named}中提出了一种Named Function Networking（NFN）。在该网络中，网络不仅仅是获取数据的分布式架构，并且是能够执行特定函数的分布式系统，该系统提出了命名的函数的概念，并且采用用$\lambda$来对函数关系进行描述。在NDN网络中NDN Forwarding Deamon通过FIB，PIT与CS来处理数据请求与数据的转发功能。在NFN中，转发模块同时还是函数的执行模块。在服务层面上，函数执行相当于一定意义上的网络服务集成。
 
 文献\cite{wu2014sofia}提出了一种基于ICN的面向服务信息网络架构（SOFIA）。而SOFIA的本质也是利用了NDN的命名、转发与缓存机制。此外在SOFIA中增加了Service Relay角色，相当于一种服务代理。服务请求者可以请求Service Relay在不同的网络环境中进行新的服务请求连接。这种机制有助于网络中multihoming，multicast以及mobility的实现。

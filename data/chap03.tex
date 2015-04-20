@@ -5,6 +5,8 @@
 %%% End: 
 
 \chapter{基于命名数据网络的存储服务}
+\label{repo}
+
 \section{命名数据网络存储原型介绍}
 在NDN中，缓存结构（CS）直接集成在NDN的架构之中，但CS架构还不能完全满足复杂的内容操作要求：一方面CS只是数据的缓存，数据会被替换掉；另一方面对于数据的插入，删除，访问控制等问题，CS完全没有主动操作接口。NDN网络架构取代当前的IP网络架构的一个主要动机就是，当前网络最主要的流量是数据分发，NDN以数据为中心的拉模式（pull）也非常适合数据分发类的应用。
 
@@ -67,6 +69,717 @@ Repo协议还包括丢包重传机制。当Interest在一定时间内未被响�
 前缀插入命令需要指定需要插入的数据前缀，选择子，插入过程持续时间，以及无数据返回的超时时间等。为了保证返回的数据不重复，每当数据返回时，Repo需要更新interest的排除选择子（Exclude Selector\footnote{http://named-data.net/doc/ndn-tlv/interest.html\#exclude}）。
 
 \section{命名数据网络存储服务协议细节}
+NDN repo协议是规定了操纵NDN持久存储的语义以及流程。 NDN repo提供了数据对象获取，插入，删除等功能。 NDN Repo需要遵守NDN Repo协议中的操作流程以及语义，但是并不需要规定特定的存储模式，安全模型，同样也不需要保证对于特定操作一定要返回真实，正确的结果。NDN Repo协议包含以下子协议：
+
+\begin{itemize}
+\item \textbf{Repo命令协议}规定了Repo协议中服务请求以及服务响应的格式与语义，同时规定了如何加入安全信息作为Repo安全模型建立的基础
+\item \textbf{Repo基础插入协议}规定了如何在Repo插入一个数据包已经数据对象，除了基础的插入协议之外，还有两种特殊的插入协议：前缀插入协议以及TCP后台批量插入协议。
+\item \textbf{Repo删除协议}规定了从Repo中删除对象的操作语义与流程
+\end{itemize}
+
+\subsection{Repo命令协议}
+Repo命令的格式封装遵循NDN signed interest\footnote{Signed interest: http://named-data.net/doc/ndn-cxx/0.3.1/tutorials/signed-interest.html}的格式,格式如下：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/<repo-prefix>/<command-verb>/................./.........................................
+                              \______  _______/ \__________________  ___________________/
+                                     \/                            \/
+                             RepoCommandParameter   Signed Interest additional components
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+Repo命令实际上为在NDN名字基础上，通过修改每个名字子单元结构，增加结构化参数得到的。Repo命令interest的名字单元意义如下所示：
+
+
+\begin{itemize}
+\item $\langle repo-prefix\rangle$ 为Repo监听的命令名字前缀
+\item $\langle command-verb\rangle$ 为代表Repo具体命令的动词，例如\textit{insert}，\textit{delete}等
+\item $\langle RepoCommandParameter\rangle$ 为执行特定命令需要的参数。由于Repo命令采用NDN interest进行封装。在现行的NDN协议中，网络数据包用的是TLV（Type Length Value）格式进行封装。该格式可以像xml格式一样迭代的封装子单元。在RepoCommandParameter可以封装多个参数。
+\end{itemize}
+
+在Signed Interest additional components采用的是signed interest格式对进行签名。signed interest包含的结构如下所示：
+\begin{itemize}
+\item $\langle timestamp\rangle$ 为命令的时间戳，为非负整数。时间戳用来防止重复攻击（replay attack）。
+\item $\langle random-value\rangle$ 随机值用来确保每一个命令的唯一性。
+\item $\langle SignatureInfo\rangle$ 签名信息用来封装签名类型，采用算法，签名证书位置（KeyLocator）等信息.
+\item $\langle SignatureValue\rangle$用来封装实际签名值。
+\end{itemize}
+
+对于前缀为/ucla/cs/repo的NDN repo服务，命令如下所示
+\begin{framed}
+\begin{tiny}
+\begin{verbatim}
+/ucla/cs/repo/<command verb>/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{tiny}
+\end{framed}
+
+\subsubsection{RepoCommandParameter}
+对于TLV文档，有其一套定义文档。RepoCommandParameter的定义如下：
+\begin{framed}
+\begin{footnotesize}
+\begin{verbatim}
+RepoCommandParameter ::= REPOCOMMANDPARAMETER-TYPE TLV-LENGTH
+                           Name?
+                           Selectors?
+                           StartBlockId?
+                           EndBlockId?
+                           ProcessId?
+                           MaxInterestNum?
+                           WatchTimeout?
+                           WatchStatus?
+                           InterestLifetime?
+
+
+
+Name                  ::= NAME-TYPE TLV-LENGTH NameComponent*
+NameComponent         ::= NAME-COMPONENT-TYPE TLV-LENGTH BYTE+
+
+Selectors             ::= SELECTORS-TYPE TLV-LENGTH
+                           MinSuffixComponents?
+                           MaxSuffixComponents?
+                           PublisherPublicKeyLocator?
+                           Exclude?
+                           ChildSelector?
+
+MinSuffixComponents   ::= MIN-SUFFIX-COMPONENTS-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+MaxSuffixComponents   ::= MAX-SUFFIX-COMPONENTS-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+PublisherPublicKeyLocator ::= KeyLocator
+
+Exclude               ::= EXCLUDE-TYPE TLV-LENGTH Any? (NameComponent (Any)?)+
+Any                   ::= ANY-TYPE TLV-LENGTH(=0)
+
+ChildSelector         ::= CHILD-SELECTOR-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+StartBlockId          ::= STARTBLOCKID-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+EndBlockId            ::= ENDBLOCKID-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+ProcessId             ::= PROCESSID-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+MaxInterestNum        ::= MAX-INTEREST-NUM-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+WatchTimeout          ::= WATCH-TIMEOUT-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+WatchStatus           ::= WATCH-STATUS-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+InterestLifetime      ::= INTEREST-LIFETIME-TYPE TLV-LENGTH
+                           nonNegativeInteger
+\end{verbatim}
+\end{footnotesize}
+\end{framed}
+
+上述文档描述了Repo命令参数的结构以第一行为例，其中RepoCommandParameter为参数名，REPOCOMMANDPARAMETER-TYPE为参数类型，在TLV中通过预先定义的数字来表示。Name为后面TLV子结构的名字。在Name中，可以看到由多个NameComponent组成。在NameComponent中，其实际类型为BYTE+。
+
+\textbf{Repo Command Selectors}
+
+Repo命令支持部分的interest选择子（selector）。选择子的作用是在interest的名字前缀会对应多个数据时所增加的限制条件。NDN interest selector和RepoCommandParameter在意义上有所不同。NDN interest selector可以用来直接选择数据包。而repo选择子在不同的命令下，含义有所不同。
+
+在插入命令中，基本流程为插入请求端发送插入命令，repo解析命令中的参数，并根据参数发送一般的NDN interest来获取数据。在RepoCommandParameter中的selector则会被直接添加到repo发送的interest中作为数据选择限制条件。在删除命令中，选择子被用来直接选择要删除的数据。同一般selector不同的是，普通选择子选择满足条件的一个数据包，而删除命令中的选择子会选择满足条件的所有数据包。
+
+Repo Command支持部分选择子，包括 MinSuffixComponents，MaxSuffixComponents，PublisherPublicKeyLocator和Exclude. ChildSelector 选择子只是在插入命令中支持，在删除命令中不支持。如果命令中包含不支持的选择子，则repo会忽略这些不支持的选择子。选择子的格式如下所示：
+\begin{framed}
+\begin{footnotesize}
+\begin{verbatim}
+Selectors             ::= SELECTORS-TYPE TLV-LENGTH
+                           MinSuffixComponents?
+                           MaxSuffixComponents?
+                           PublisherPublicKeyLocator?
+                           Exclude?
+                           ChildSelector?
+
+MinSuffixComponents   ::= MIN-SUFFIX-COMPONENTS-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+MaxSuffixComponents   ::= MAX-SUFFIX-COMPONENTS-TYPE TLV-LENGTH
+                           nonNegativeInteger
+
+PublisherPublicKeyLocator ::= KeyLocator
+
+Exclude               ::= EXCLUDE-TYPE TLV-LENGTH Any? (NameComponent (Any)?)+
+Any                   ::= ANY-TYPE TLV-LENGTH(=0)
+
+ChildSelector         ::= CHILD-SELECTOR-TYPE TLV-LENGTH
+                           nonNegativeInteger
+\end{verbatim}
+\end{footnotesize}
+\end{framed}
+
+\textbf{StartBlockId, EndBlockId}
+
+StartBlockId与EndBlockId表示要插入和删除数据对象的分段的范围。在发送命令中，两者都可以不存在。StartBlockId的默认值为0。当EndBlockId不存在是，在插入命令中，Repo会不断发送更大的数据分段请求，
+
+\textbf{Selector与StartBlockId和EndBlockId冲突}
+
+在插入命令中如果采用Id范围的话，则需要插入的数据名字为数据对象完整的名字。而Selector则是以改名字为前缀选择一个数据对象。当Selector和数据段范围同时存在的时候，Repo则忽略该命令并返回表示格式错误的状态码（405）。
+
+\textbf{ProcessId}
+
+为了使repo能够处理多个插入或删除过程，通过ProcessId用来区分不同的过程。
+
+\textbf{InterestLifetime}
+
+InterestLifetime指的是从Interest发送到data接收的最大延迟时间。在插入命令中，InterestLifetime会被添加在数据获取interest中。在删除命令中，InterestLifetime指的是删除命令从发送到最后得到结果的最大等待时间。
+
+\textbf{MaxInterestNum}
+
+MaxInterestNum为前缀插入命令的参数，表示的是Repo对于同一前缀最多可以发送的interest数目。
+
+\textbf{WatchTimeout}
+
+WatchTimeout为前缀插入命令的参数，表示的是Repo对于同一前缀的前缀插入进程最长的保持时间，超过该时间，Repo会结束前缀插入的过程。
+
+\textbf{WatchStatus}
+
+WatchStatus为前缀插入命令的参数，该参数为客户端在Repo前缀插入过程中的主动控制参数。当WatchStatus为false的时候，会主动关闭Repo前缀插入的过程。
+
+\subsubsection{Repo Command Response}
+Repo Command Response是repo对于相对应的repo命令的返回数据包。在Repo Command Response中通过状态码statuscode来表示所对应的repo命令进程的运行状态。在该命令返回包中，封装了一些关于repo运行状态的信息，通过TLV子结构RepoCommandResponse封装在数据包的内容部分之中。RepoCommandResponse的文档描述结构如下所示：
+
+\begin{framed}
+\begin{footnotesize}
+\begin{verbatim}
+RepoCommandResponse   ::= INSERTSTATUS-TYPE TLV-LENGTH
+                           ProcessId?
+                           StatusCode
+                           StartBlockId?
+                           EndBlockId?
+                           InsertNum?
+                           DeleteNum?
+
+ProcessId            ::= PROCESSID-TYPE TLV-LENGTH
+                            nonNegativeInteger 
+
+StatusCode            ::= STATUSCODE-TYPE TLV-LENGTH
+                            nonNegativeInteger    
+
+StartBlockId          ::= STARTBLOCKID-TYPE TLV-LENGTH
+                            nonNegativeInteger
+
+EndBlockId            ::= ENDBLOCKID-TYPE TLV-LENGTH
+                            nonNegativeInteger
+
+InsertNum             ::= INSERTNUM-TYPE TLV-LENGTH
+                            nonNegativeInteger
+
+DeleteNum             ::= DELETENUM-TYPE TLV-LENGTH
+                            nonNegativeInteger
+\end{verbatim}
+\end{footnotesize}
+\end{framed}
+
+\textbf{Name}
+
+代表所对应的Repo命令中repocommandparameter的名字部分，指的是正在操纵的数据对象的名字前缀。
+
+\textbf{ProcessId}
+
+是由Repo产生的一个随机数字，用来指定其所对应的Repo命令的执行进程序列。在后续客户端与Repo对该进程的交互中，需要在命令或者返回网络包中添加该进程序列号以指明对应执行进程。
+
+\textbf{StatusCode}
+
+StatusCode参考HTTP的状态码，通过一个数字来表示对应Repo执行进程的运行状态。
+
+\textbf{StartBlockId, EndBlockId}
+
+StartBlockId和EndBlockId与RepoCommandParameter中的相同。如果命令中，两个参数都是缺失的，Repo将会将利用目前所知的信息为这两个参数赋值。当StartBlockId缺失的时候，repo会将该值置0。如果EndBlockId确实的时候，repo会将该值设置为无穷大。在插入过程中，EndBlockId还会随着得到数据包中的finalBlockId进行更新。
+
+\textbf{InsertNum, DeleteNum}
+InsertNum和DeleteNum表示其所对应的命令插入和删除执行过程中，在该时刻总共插入和删除了多少个数据包。
+
+\subsubsection{Repo TLV类型封装序号}
+在TLV格式封装中，对于TLV结构类型的名字，在实际编码数字中用对应的数字进行表示。对应的数字编码如表\ref{tab:tlv-encoding}所示：
+
+\begin{table}[h]
+\centering
+\caption{TLV Encoding Number}
+\label{tab:tlv-encoding}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Type} & \textbf{Number} \\ \hline
+RepoCommandParameter & 201 \\ \hline
+StartBlockId & 204 \\ \hline
+EndBlockId & 205 \\ \hline
+ProcessId & 206 \\ \hline
+RepoCommandResponse & 207 \\ \hline
+StatusCode & 208 \\ \hline
+InsertNum & 209 \\ \hline
+DeleteNum & 210 \\ \hline
+MaxInterestNum & 211 \\ \hline
+WatchTimeout & 212 \\ \hline
+WatchStatus & 213 \\ \hline
+InterestLifetime & 214 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Repo信任模型}
+Repo的信任模型依赖于Repo服务的实施者的具体设计，例如采用PKI架构。 Repo可以采用各种具体设计的验证策略，数据消费者可以自己定义其信任锚点（trust anchor）。但Repo协议中不会定义具体的安全设计，只是提供了建立安全策略与信任模型的基本工具singed interest。NDN信任管理可以具体参见NDN FAQ\footnote{NDN FAQ: http://named-data.net/project/faq/}
+
+\subsection{Repo基础插入协议}
+基础repo插入协议利用Repo命令。Repo插入命令触发指定repo获取并存储相应的数据对象。该命令为signed interest，除了验证信任之外，可以通过身份来进行访问控制。当interest可以被验证但是数据对象不存在时，repo会应答表示OK的状态码，并开始发送interest去获取数据对象。
+
+基础插入协议同样支持数据对象分段插入。分段信息定义在RepoCommandParameter中。
+
+\subsubsection{基础插入命令}
+
+\textbf{插入数据}
+
+Command Verb: insert
+
+插入命令的语义遵循repo命令格式。当$\langle repo prefix\rangle$为 /ucla/cs/repo，插入命令如下所示：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/ucla/cs/repo/insert/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+\textbf{插入状态检查}
+
+Command Verb: insert check
+
+在插入过程中，请求者可以通过发送状态检查命令去查看插入过程的运行状态。 插入状态检查命令同样是signed interest。状态检查的命令示例如下所示：
+
+\begin{framed}
+\begin{tiny}
+\begin{verbatim}
+/ucla/cs/repo/insert check/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{tiny}
+\end{framed}
+
+\textbf{插入类型}
+
+如前面协议原则介绍所属，基础插入协议共支持三种插入类型，包括单数据包插入，分段插入以及选择子插入
+
+\subsubsection{格式}
+\textbf{RepoCommandParameter}
+
+基础插入命令以及插入状态检查命令中参数RepoCommandParameter遵循repo command协议。其中插入命令使用包括Name，Selectors，StartBlockId和EndBlockId。状态检查命令使用Name和ProcessId。
+
+在插入命令中，名字代表要插入数据对象的名字前缀或完整的名字。如果选择子Selectors被设置的话，repo获取数据的interest中需要附加该选择子。如果StartBlockId或EndBlockId被设置的话，则证明该插入过程为分段插入，repo获取数据对象StartBlockId与EndBlockId之间的分段。因为Selectors中Name的含义为名字前缀，但是在分段插入中，name代表的数据的完整的名字。所以当StartBlockId或EndBlockId与Selector同时被设置时，repo会忽略该命令并返回格式错误信息（405）。
+
+在插入状态检查命令中，名字代表要检查插入状态的命令前缀。ProcessId是通过最开始插入命令所对应的响应包中的ProcessId来设置的。
+
+\textbf{Insertion status response}
+
+插入状态数据对象可以是数据插入或者状态检查命令的数据返回包，并遵循Repo命令返回（epo command response）格式。
+
+StatusCode表明对应的插入状态。InsertNum表示到目前为止已经有多少需要插入的数据对象所对应的数据包插入到repo之中。StartBlockId和EndBlockId表示到目前为止repo所能确定的插入数据段的插入范围。ProcessId在插入命令命令接收并在插入过程开始之前生成的随机数，用来表示插入过程。
+
+在插入命令的响应请求中，Name，ProcessId，StartBlockId和EndBlockId，ProcessId会被设置。当插入命令的EndBlockId为空时，响应数据包的EndBlockId也会为空。
+
+在状态检查命令的响应数据包中，Name，ProcessId，StartBlockId和EndBlockId，ProcessId会被设置。当插入命令的EndBlockId为空时，相应数据包会一直为空，直到获得的数据包中包含FinalBlockId字段。EndBlockId会被FinalBlockId更新。当出现更小的FinalBlockId时，EndBlockId会继续被更新。
+
+插入命令中StatusCode的定义如表\ref{ins-statusCode}所示：
+
+\begin{table}[h]
+\centering
+\caption{StatusCode对应定义}
+\label{tab:ins-statusCode}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{StatusCode} & \textbf{Description} \\ \hline
+100 & The command is OK. can start to fetch the data \\ \hline
+200 & All the data has been inserted \\ \hline
+300 & This insertion is in progress \\ \hline
+401 & This insertion command or insertion check command is invalidated \\ \hline
+402 & Selectors and BlockId both present \\ \hline
+403 & Malformed Command \\ \hline
+404 & No such this insertion is in progress \\ \hline
+405 & EndBlockId Missing Timeout \\ \hline
+\end{tabular}
+\end{table}
+
+\textbf{EndBlockId Missing Timeout}
+
+EndBlockId Missing Timeout指的是当分段插入命令参数中EndBlockId也就是最后一个字段的范围没有设置的时候，并且在Repo获取的data包中也长时间没有FinalBlockId，导致Repo长时间无法确定该确定最后一个数据段号是多少的现象。在Repo插入协议中，当该现象达到一定数值即EndBlockId Missing Timeout这个值的时候，repo便会停止数据获取的过程。在Repo插入过程中，有一种情景就是始终无法确定数据对象最后的字段号。为了维持插入过程，repo协议设计了对于某过程，可以根据该过程的进程号发送相应的查询协议，一次可以重新将EndBlockId Missing Timeout置零。
+
+\subsubsection{协议流程}
+
+\textbf{数据插入协议流程}
+
+\begin{enumerate}[step 1.]
+\item Repo开始验证命令。如果验证过程没有马上失败，则跳到step 3。
+\item 发送代表验证失败的命令请求返回包，停止协议过程。 (StatusCode: 401)
+\item 如果参数中StartBlockId和EndBlockId都不存在，则跳到第7步。
+\item 如果StartBlockId或EndBlockId其中至少一个出现，同时参数中出现selectors，则返回代表格式错误的数据返回，同时停止Repo插入过程。(StatusCode: 402)
+\item 如果StartBlockId和EndBlockId同时出现，并且StartBlockId小于等于EndBlockId，跳到step 7。
+\item 发送代表格式错误的数据返回，并终止插入过程。(StatusCode: 403)
+\item 等待验证过程结束
+\item 如果验证出现错误，则跳到step 2。(StatusCode: 401)
+\item 发送代表插入过程开始的数据返回。(StatusCode: 200)
+\item 如果StartBlockId和EndBlockId都不存在，则跳到step 16。
+\item 发送含有参数中Name和selectors的interest来获取数据。
+\item 等待获取过程结束
+\item 如果获取过程失败，则跳到step 27。
+\item 存储获得的数据包
+\item 停止插入过程，插入过程结束
+\item 如果StartBlockId，则本进程StartBlockId为0。如果EndBlockId缺失，则进程EndBlockId缺失直到返回数据包包含FinalBlockId，启动EndBlockId Missing Timeout计时器。
+\item 将StartBlockId附在Name之后
+\item 开始发送包含Name的interest
+\item 等待获取过程结束
+\item 如果获取过程失败，则跳到step 26
+\item 存储获得的数据包
+\item 如果获得的数据包包含FinalBlockId，并且FinalBlockId小于当前EndBlockId或者EndBlockId缺失，则将EndBlockId置为FinalBlockId。
+\item 如果Name最后一个部分即代表数据段号的部分大于等于EndBlockId，则停止数据获取过程，插入过程结束。
+\item 增加Name数据段号1
+\item 跳到step 17
+\item 再获取该名字数据两次，如果两次都失败则停止插入过程。如果成功，跳到step 21
+\item 再获取该名字数据两次，如果两次都失败则停止插入过程。如果成功，跳到step 24
+\end{enumerate}
+当EndBlockId Missing Timeout计时器启动之后，repo会监视step 17~26。如果超时发生，Repo会停止插入过程。在监视过程中，如果接收到该过程的查询命令，则将计时器重新置零。
+
+\textbf{数据插入状态检查协议流程}
+\begin{enumerate}[step 1.]
+\item 验证命令，如果成功则跳到step 2，否则跳到step 3
+\item 发送代表验证失败的数据返回包，并停止检查过程。(StatusCode: 401)
+\item 开始利用进程号以及数据的名字查询插入过程。如果查询成功，则跳到step 5，否则跳到step 4
+\item 返回代表查询失败的数据包。(StatusCode: 404)
+\item 查询该插入状态，并返回该状态。如果EndBlockId Missing Timeout计时器正在运行，则将该计时器置零
+\end{enumerate}
+
+\subsubsection{协议流程图}
+基本插入及插入状态查询协议流程如下所示：
+
+\begin{figure}[H]
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+Requester                     Repo                          Data producer
+    |                           |                                 |
+    |                           |                                 |
+  +---+  Insert command       +---+                               |
+  |   | --------------------> |   |                               |
+  +---+                       |   |                               |
+    |                         |   |                               |
+  +---+   Confirm start       |   |                               |
+  |   | <==================== |   |                               |
+  +---+   Reject command      +---+                               |
+    |     (with status code)    |                                 |
+    |                         +---+     Interest for Data       +---+
+    |                         |   | --------------------------> |   |
+    |                         +---+                             |   |
+    |                           |                               |   |
+    |                         +---+       Data segment          |   |
+    |                         |   | <========================== |   |
+    |                         +---+                             +---+
+    |                           |                                 |
+    |                           ~                                 ~
+    |                           ~                                 ~
+    |                           |                                 |
+    |                         +---+     Interest for Data       +---+
+    |                         |   | --------------------------> |   |
+    |                         +---+                             |   |
+    |                           |                               |   |
+    |                         +---+       Data segment          |   |
+    |                         |   | <========================== |   |
+    |                         +---+                             +---+
+    |                           |                                 |
+    |                           |                                 |
+    |                           ~                                 ~
+    |                           ~                                 ~
+    |                           |                                 |
+    |                           |                                 |
+    |                           |                                 |
+  +---+   Status interest     +---+                               |
+  |   | --------------------> |   |                               |
+  +---+                       |   |                               |
+    |                         |   |                               |
+  +---+    Status response    |   |                               |
+  |   | <==================== |   |                               |
+  +---+                       +---+                               |
+    |                           |                                 |
+    |                           |                                 |
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+\end{figure}
+
+\subsection{Repo删除协议}
+Repo删除协议命令格式遵循Repo Command协议。
+
+Repo删除协议支持删除单个对象，同时也支持删除特定名字前缀下面的所有对象。选择子在删除协议中是用来选择多个对象的。在这里，选择子selectors的意义与一般的选择子含义不同。一般选择子含义是选择满足选择子所规定的限制条件中的一个数据对象，而在删除协议中选择子选择的是满足其规定限制条件的所有数据对象。此外删除协议还支持数据对象分段删除，即删除被分段数据对象一定范围的数据包。
+
+\subsubsection{基本操作}
+\textbf{删除命令}
+
+Command verb: \textbf{delete}
+
+删除命令遵循Repo Command协议。删除协议支持如协议设计所示支持三种删除包括单独数据对象删除，同前缀数据对象删除以及分段数据对象删除。
+
+删除命令格式例子如下所示：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/ucla/cs/repo/delete/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+\textbf{删除状态检查}
+
+Command verb: \textbf{delete check}
+
+删除状态检查与插入状态检查相似，同样可以查询某一删除进程的数据删除状态。
+
+删除命令格式如下所示：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/ucla/cs/repo/delete check/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+\subsubsection{格式}
+\textbf{Deletion Command RepoCommandParameter}
+
+删除命令参数包括Name，Selector，StartBlockId，EndBlockId，ProcessId。
+
+Name为需要删除的数据对象名字前缀。
+
+Selector用来选择任意满足条件的数据对象。在删除命令中不支持ChildSelector选择子。
+
+StartBlockId和EndBlockId用来删除分段的数据对象。Repo会删除StartBlockId和EndBlockId之间的数据段。
+
+ProcessId是客户端生成的用来区分不同删除过程的随机数。Repo会将该ProcessId作为进程号与其它进程进行区分。
+
+\textbf{Deletion status check RepoCommandParameter}
+
+Name和ProcessId用来选定特定的删除过程。如果Repo可以通过Name和ProcessId确定该进程，则返回该删除进程状态。否则则返回查询失败。
+
+\textbf{Deletion Check Command Selectors}
+
+在删除状态查询命令中，不支持选择子。如果命令中包含选择子，则repo返回查询失败数据包。
+
+\textbf{Deletion status response}
+
+Deletion status response可以作为删除命令以及删除状态查询命令的数据返回包。
+
+在deletion status response中，数据内容中包括Name，StatusCode，Selector，StartBlockId，EndBlockId，ProcessId，DeletenNum。其中Name，ProcessId，Selector与删除命令中的含义相同。StatusCode利用特定数字代表删除状态。DeleteNum代表有多少数据包已经被删除。
+
+删除StatusCode定义如下所示：
+
+\begin{table}[h]
+\centering
+\caption{StatusCode对应定义}
+\label{tab:del-statusCode}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{StatusCode} & \textbf{Description} \\ \hline
+200 & All the data has been deleted \\ \hline
+300 & This deletion is in progress \\ \hline
+401 & This deletion or deletion check is invalidated \\ \hline
+402 & Selectors and BlockId both present \\ \hline
+403 & Malformed Command \\ \hline
+404 & No such this deletion is in progress \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{协议流程}
+Repo删除协议流程如下所示：
+\begin{enumerate}[step 1.]
+\item 开始验证删除命令，如果验证失败，则跳到step 3
+\item 发送代表验证失败的命令请求应答，停止协议流程。(StatusCode: 401)
+\item 查看是否有相同RepoCommandParameter的删除过程存在，如果存在，则等待删除过程结束
+\item 如果StartBlockId或EndBlockId和selectors同时存在，则返回代表格式错误的返回值。(StatusCode: 402)
+\item 如果selectors，则跳到step 8
+\item 查看是否StartBlockId或EndBlockId存在。如果都存在，查看是否StartBlockId小于等于EndBlockId。如果是，则返回代表格式错误的返回。 (StatusCode: 403) 否则跳到step 9
+\item 如果StartBlockId，EndBlockId和selectors都不存在，则跳到step 10。
+\item 如果删除满足名字前缀与选择子规定条件的所有数据包，跳到step 11
+\item 删除StartBlockId和EndBlockId之间的所有数据包。如果StartBlockId缺失，则删除StartBlockId为0。如果EndBlockId缺失，则删除到最后一个数据段的数据包
+\item 如果发送命令的lifetime没有超时，则返回代表删除结束的数据包。如果超时，则在一定时间内等待相同名字以及删除参数的命令。删除过程结束。(StatusCode: 200)
+\end{enumerate}
+
+Repo删除状态检查协议的流程为：
+\begin{enumerate}[step 1.]
+\item 验证删除状态检查命令你敢
+\item 如果验证失败则返回代表验证失败的数据包，停止检查流程。(StatusCode: 401)
+\item 通过ProcessId与名字前缀查询删除过程状态。如果没有改进程，跳到step 4，否则跳到step 5
+\item 返回代表查询失败的数据包。 (StatusCode: 404)
+\item 返回代表查询成功的数据包。 (StatusCode: 300)
+\end{enumerate}
+
+\subsubsection{协议流程图}
+删除及删除状态查询协议流程如下所示：
+
+\begin{figure}[H]
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+Requester                     Repo 
+    |                           |                                 
+    |                           |                                 
+  +---+  Delete command       +---+                               
+  |   | --------------------> |   |                               
+  +---+                       +---+                               
+    |                           |                                 
+    |                           |                                 
+    |                           |                                 
+  +---+   Status interest     +---+                               
+  |   | --------------------> |   |                               
+  +---+                       |   |                               
+    |                         |   |                               
+  +---+    Status response    |   |                               
+  |   | <==================== |   |                               
+  +---+                       +---+                               
+    |                           |                                 
+    |                           |                                 
+    |                           |                                 
+  +---+   Confirm Deletion    +---+                               
+  |   | <==================== |   |                               
+  +---+   Reject command      +---+                               
+    |     (with status code)    |    
+    |                           |
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+\end{figure}
+
+\subsection{Repo前缀插入协议}
+前缀插入是一种特殊的Repo数据插入协议。在该协议中，Repo持续发送相同名字前缀的interest。当repo接收到数据包时，repo会更新exclude选择子，从而可以不再接收该名字的数据包，使获得的数据包不重复。Repo会在以下情况，停止前缀插入过程:Repo发送Interest到一定数量或一定时间；interest发送失败到一定数量；Repo接收到前缀插入停止请求。
+
+\subsubsection{基本操作}
+\textbf{前缀插入开始命令}
+
+Command Verb: \textbf{watch start}
+
+前缀插入开始命令的格式参照Repo Command协议。 前缀插入命令例子如下：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/ucla/cs/repo/watch start/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+Watch start命令使用一下参数：
+
+\begin{itemize}
+\item Name:为前缀插入发送interest用的前缀，在这个前缀下的数据包会被不断地插入repo之中
+\item InterestLifetime:为repo发送的interest与数据最大的延迟时间。当interest超时，则repo会重新发送相同的interest。如果repo在InterestLifetime的时间内接收到数据，则repo发送Interest的selectors的exclude选择子会进行更新，接收到数据的名字会被添加进exclude选择子。repo之后会发送更新过的的interest来获取数据。
+\item MaxInterestNum代表repo最多可以发送interest的数量。当发送的Interest到达这个数量时,repo会停止watch prefix过程。如果在命令中没有指定MaxInterestNum，则代表MaxInterestNum为无穷大。
+\item WatchTimeout代表watch prefix过程最大的持续时间。当repo发送前缀插入的过程超过了这个时间，如果WatchTimeout没有在命令中指定，则WatchTimeout默认值为无穷大。
+\end{itemize}
+
+\textbf{前缀插入状态检查命令}
+
+Command Verb:\textbf{watch check}
+
+watch check用来查询前缀插入的执行状态，遵循repo command协议。watch check命令格式例子如下所示：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/ucla/cs/repo/watch check/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+watch prefix采用Name和ProcessId作为参数条件用来匹配对应的Watch Prefix过程
+
+\textbf{前缀插入停止命令}
+
+Command Verb:\textbf{watch stop}
+
+在repo前缀插入过程中，当其接到前缀插入停止命令，对应的前缀插入过程会停止。watch stop命令遵循Repo Command协议，其格式例子如下所示：
+
+\begin{framed}
+\begin{scriptsize}
+\begin{verbatim}
+/ucla/cs/repo/watch stop/<RepoCommandParameter>/<timestamp>/<random-value>/<SignatureInfo>/<SignatureValue>
+\end{verbatim}
+\end{scriptsize}
+\end{framed}
+
+前缀插入停止命令采用Name和ProcessId作为参数条件用来匹配对应的Watch Prefix过程。
+
+\subsubsection{RepoCommandResponse}
+前缀插入过程的RepoCommandResponse可以同时作为前缀插入命令与前缀插入状态检查命令的数据返回。RepoCommandResponse主要包含两个参数：InsertNumber代表有多少数据包已经被插入到repo中；StatusCode用数字代表前缀插入过程运行的状态。
+
+前缀插入的StatusCode定义如下所示：
+
+\begin{table}[h]
+\centering
+\caption{StatusCode对应定义}
+\label{tab:watch-statusCode}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{StatusCode} & \textbf{Description} \\ \hline
+100 & The command is OK. Start to watch the prefix \\ \hline
+101 & Watched Prefix Insertion is stop \\ \hline
+300 & This watched prefix Insertion is in progress \\ \hline
+401 & This watch command or watchCheck command is invalidated \\ \hline
+402 & BlockId present. BlockId is not supported in this protocol \\ \hline
+403 & Malformed Command \\ \hline
+404 & No such this process is in progress \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{前缀插入协议流程}
+\textbf{前缀插入开始协议流程}
+
+\begin{enumerate}[step 1.]
+\item 开始验证watch start命令。如果验证成功，跳到step 3，否者跳到step 2
+\item 返回代表验证不成功的数据返回。结束前缀插入过程。 (StatusCode: 401)
+\item 检验前缀插入命令参数，如果无法成功提取，则返回代表格式错误的数据返回，停止前缀插入过程。(StatusCode: 403)
+\item 如果参数中包含BlockId，则代表返回格式不支持的数据返回，结束前缀插入过程。(StatusCode: 402) 
+\item 利用提取出来的参数构建interest，并将selector设置为Rightmost Child Selector。
+\item 发送Interest并启动watchtime计时器以及发送Interest的计数器并将计数器置1
+\item 如果接收到数据，跳到step 8，如果interest超时，则跳到step 17
+\item 如果数据可以被验证，则跳到step 9，否则跳到step 15.
+\item 检查是否前缀插入过程还在执行，如果停止执行，则流程结束。
+\item 检查前缀插入整个过程是否超时或者发送interest数据达到规定上限，如果是跳到step 11，否则跳到step 12
+\item 清空流程变量（sent interest数量，watch timeout, interest lifetime），并停止插入流程
+\item 将数据存入repo之中
+\item 更新selectors，将接受数据包名字加入exclude选择子中，并构造新的interest
+\item 发送新的interest并将计数器加1，跳到step 7.
+\item 重复step 9到step 11，并跳到step 12
+\item 更新选择子并跳到step 14
+\item 重复step 9到step 11，并跳到step 12
+\item 发送新的interest并将计数器加1，跳到step 7.
+\end{enumerate}
+
+\textbf{前缀插入状态检查协议流程}
+
+\begin{enumerate}[step 1.]
+\item 开始验证命令。如果验证成功跳到step 3，否则跳到step 2
+\item 返回代表验证不成功的数据返回。结束状态检查流程那个。 (StatusCode: 401)
+\item 检验前缀插入状态检查命令参数，如果无法成功提取，则返回代表格式错误的数据返回，停止前缀插入过程。(StatusCode: 403)
+\item 检查该进程是否存在，如果存在，跳到step 5，否则发送代表查询失败的数据返回。(StatusCode: 404)
+\item 利用processId去查找数据返回，并返回前缀插入运行状态
+\end{enumerate}
+
+\textbf{前缀插入停止协议流程}
+
+\begin{enumerate}[step 1.]
+\item 验证停止命令。如果验证成功跳到step 3，否则跳到step 2
+\item 发送达标验证失败的数据返回，停止前缀插入的关闭流程。 (StatusCode: 401)
+\item 提取前缀插入停止命令参数，如果无法提取参数，则返回代表格式错误的数据返回。(StatusCode: 403)
+\item 停止前缀插入流程并返回代表停止成功的数据返回。 (StatusCode: 101)
+\end{enumerate}
+
+
 \section{命名数据网络存储服务开发及实验评估}
 基于NDN Repo协议，作者开发了repo-ng（NDN repo of next generation）作为协议的原型实现。repo-ng的设计原则是希望能做到跨平台，降低对系统的特殊依赖，并且尽量轻量级。repo-ng采用ndn-cxx作为NDN协议底层开发库，利用sqlite3\footnote{SQLite3：https://sqlite.org/about.html}数据库作为数据对象底层存储。
 
